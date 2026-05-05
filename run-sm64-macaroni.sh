@@ -1,6 +1,6 @@
 #!/bin/zsh
 # run-sm64-macaroni.sh
-# sm64ex Macaroni — Intel Mac / macOS Tahoe launcher
+# sm64 Macaroni — Intel Mac / macOS Tahoe launcher
 #
 # Locates the most-recently-built sm64ex-family binary, backs up sm64config.txt,
 # runs preflight checks, exports DYLD fallbacks, and launches the game from its
@@ -20,7 +20,7 @@
 #     ./run-sm64-macaroni.sh --restore-cfg         # restore latest cfg backup
 #
 # Config & saves (portable build, NON_PORTABLE not set):
-#     <upstream>/build/us_pc/sm64config.txt    keybindings + window prefs
+#     <upstream>/build/us_pc/sm64config.txt        keybindings + window prefs
 #     <upstream>/build/us_pc/sm64_save_file.bin    save data
 #
 # Log output:
@@ -28,6 +28,18 @@
 #     logs/sm64config.txt.backup-<timestamp>
 #
 # CHANGELOG
+#   v0.12 (2026-05-05) - Repo renamed from sm64ex-macaroni → sm64-macaroni to
+#                        reflect dual-family scope. Header branding updated;
+#                        no behavior change. (libultraship/Ghostship launch
+#                        path lands when the build script gains BUILD_FAMILY.)
+#   v0.11 (2026-05-05) - Drop -macos suffix from filename and internal log
+#                        references (new convention: no -macos anywhere);
+#                        remove sound_data.ctl.inc.c preflight check — that
+#                        marker reflects SpaghettiKart's layout, not sm64ex's
+#                        (where extract_assets.py writes to a different file
+#                        tree and EXTERNAL_DATA=1 packs runtime data into
+#                        build/us_pc/res/). Binary existence is already proof
+#                        of a successful extraction step.
 #   v0.10 (2026-05-05) - Initial version; adapted from run-spmc-macos.sh v0.15;
 #                        no JSON config patching (sm64ex uses plain-text config);
 #                        no --metal/--opengl flags (renderer is compile-time);
@@ -37,7 +49,7 @@
 
 set -eo pipefail
 
-VERSION="0.10"
+VERSION="0.12"
 SCRIPT_DIR="${0:A:h}"
 LOG_KEEP=5
 
@@ -147,7 +159,7 @@ if (( RESTORE_CFG )); then
 fi
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
-echo "🎮 run-sm64-macaroni-macos.sh v$VERSION — $(date)" | tee -a "$LOGFILE"
+echo "🎮 run-sm64-macaroni.sh v$VERSION — $(date)" | tee -a "$LOGFILE"
 if [[ -z "$BINARY" ]]; then
     echo "    ❌ No sm64ex-family binary found." | tee -a "$LOGFILE"
     echo "       Run: ./sm64-macaroni-build.sh" | tee -a "$LOGFILE"
@@ -157,13 +169,6 @@ echo "    Upstream: $SELECTED_PRESET ($(basename "$SELECTED_REPO"))" | tee -a "$
 echo "    Binary:   $BINARY" | tee -a "$LOGFILE"
 echo "    Built:    $(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$BINARY")" | tee -a "$LOGFILE"
 echo "    Log:      $LOGFILE" | tee -a "$LOGFILE"
-
-# Asset extraction marker — same one the build script uses. If this is missing,
-# the binary will likely segfault on first frame trying to load missing assets.
-if [[ ! -f "$SELECTED_REPO/sound/sound_data.ctl.inc.c" ]]; then
-    echo "    ⚠️  sound_data.ctl.inc.c missing — assets may not be extracted." | tee -a "$LOGFILE"
-    echo "       Run: ./sm64-macaroni-build.sh" | tee -a "$LOGFILE"
-fi
 
 # ── Config backup ─────────────────────────────────────────────────────────────
 # sm64config.txt is plain-text key=value. We back it up before each run as a
@@ -211,7 +216,7 @@ fi
 
 echo "" | tee -a "$LOGFILE"
 echo "════════════════════════════════════════════════════════════════" | tee -a "$LOGFILE"
-echo "✅ run-sm64-macaroni-macos.sh v$VERSION complete!" | tee -a "$LOGFILE"
+echo "✅ run-sm64-macaroni.sh v$VERSION complete!" | tee -a "$LOGFILE"
 echo "    📄 $LOGFILE" | tee -a "$LOGFILE"
 echo "    💾 Keeping last $LOG_KEEP run logs" | tee -a "$LOGFILE"
 echo "════════════════════════════════════════════════════════════════" | tee -a "$LOGFILE"

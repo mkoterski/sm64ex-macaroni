@@ -1,19 +1,21 @@
-# sm64ex-macaroni
+# sm64-macaroni
 
 > **🚧 Work in progress** - sm64ex family build/run flow is working end-to-end. App bundling is nearly there, DMG packaging and the Ghostship preset are next up.
 
 Wrapper scripts for building **Super Mario 64 PC ports** on **Intel Macs** running **macOS Tahoe** (26.x).
 
-Inspired by [haframjolk/sm64ex-mac](https://github.com/haframjolk/sm64ex-mac), restructured to match the conventions used in my other macOS game-port wrappers (see [Related projects](#related-projects)).
+This repo wraps two distinct port lineages under one set of scripts: the **sm64ex family** (gmake-based, originally inspired by [haframjolk/sm64ex-mac](https://github.com/haframjolk/sm64ex-mac)) and the **libultraship family** ([HarbourMasters/Ghostship](https://github.com/HarbourMasters/Ghostship)). Pick a fork, run the scripts. Conventions match my other macOS game-port wrappers (see [Related projects](#related-projects)).
+
+> **Note on naming:** this repo was originally `sm64ex-macaroni` and was renamed to `sm64-macaroni` once Ghostship support was scoped in. sm64ex is no longer the only target. Bundle IDs migrated to `com.mkoterski.sm64-macaroni.<preset>` in `sm64-macaroni-bundle.sh` v0.13.
 
 ## Status
 
 | Script | Version | Status |
 |---|---|---|
-| `sm64-macaroni-initial-setup.sh` | v0.11 | ✅ tested |
-| `sm64-macaroni-build.sh` | v0.11 | ✅ tested with `sm64pc/sm64ex` |
-| `run-sm64-macaroni.sh` | v0.11 | ✅ tested - boots into Mario, exits clean |
-| `sm64-macaroni-bundle.sh` | v0.12 | 🔧 LC_RPATH dedup fix landed, re-test pending |
+| `sm64-macaroni-initial-setup.sh` | v0.12 | ✅ tested |
+| `sm64-macaroni-build.sh` | v0.12 | ✅ tested with `sm64pc/sm64ex` |
+| `run-sm64-macaroni.sh` | v0.12 | ✅ tested - boots into Mario, exits clean |
+| `sm64-macaroni-bundle.sh` | v0.13 | 🔧 LC_RPATH dedup fix landed, re-test pending |
 | `sm64-macaroni-package.sh` | - | ⏳ planned (DMG creation) |
 | `sm64-macaroni-sysinfo.sh` | - | ⏳ planned (system snapshot for bug reports) |
 | `sm64-macaroni-collect-crash.sh` | - | ⏳ planned (crash-report collector) |
@@ -99,7 +101,7 @@ Produces `dist/<App>.app` with `dylibbundler`-bundled Homebrew dylibs and an ad-
 ## Repo layout
 
 ```
-sm64ex-macaroni/
+sm64-macaroni/
 ├── README.md
 ├── roms/                              # gitignored - place sm64.us.z64 here
 ├── src/                               # icon.icns, icon.png
@@ -139,7 +141,7 @@ Apple Silicon: untested. May work via Rosetta 2 - feedback welcome.
 
 ## Known issues
 
-- **App bundle launch (sm64ex family)**: dyld `SIGABRT` on launch caused by duplicate `LC_RPATH '@executable_path/../libs/'` entries. sm64ex's `OSX_BUILD=1` path adds the rpath at link time and `dylibbundler` adds it again. macOS 14+ refuses to load binaries with duplicate rpaths. Fixed in `sm64-macaroni-bundle.sh` v0.12 (Step 7.5: enumerate via `otool -l`, dedupe via `install_name_tool -delete_rpath` + `-add_rpath` before `codesign`). End-to-end re-test pending.
+- **App bundle launch (sm64ex family)**: dyld `SIGABRT` on launch caused by duplicate `LC_RPATH '@executable_path/../libs/'` entries. sm64ex's `OSX_BUILD=1` path adds the rpath at link time and `dylibbundler` adds it again. macOS 14+ refuses to load binaries with duplicate rpaths. Fixed in `sm64-macaroni-bundle.sh` v0.11+ (Step 7.5: enumerate via `otool -l`, dedupe via `install_name_tool -delete_rpath` + `-add_rpath` before `codesign`). End-to-end re-test pending.
 - **Ghostship preset**: scaffolding being added; not yet runnable.
 - **Render96ex / coopdx**: preset tables in place but not yet exercised on Tahoe.
 - **No `.dmg` distribution yet**: package script not written. For now the bundle script's output in `dist/` is the share artifact.

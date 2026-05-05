@@ -1,6 +1,6 @@
 #!/bin/zsh
 # sm64-macaroni-initial-setup.sh
-# sm64ex Macaroni — first-run setup for macOS Tahoe / Intel Mac
+# sm64 Macaroni — first-run setup for macOS Tahoe / Intel Mac
 #
 # Installs Xcode CLT, Homebrew, and the common build dependencies shared by
 # all supported upstream presets across both build families:
@@ -23,13 +23,16 @@
 #     ./sm64-macaroni-initial-setup.sh
 #
 # Output:
-#     sm64ex-macaroni/logs/initial-setup-<timestamp>.log
+#     sm64-macaroni/logs/initial-setup-<timestamp>.log
 #
 # ROM layout (place file here before building — shared across all upstreams):
 #     roms/sm64.us.z64    🇺🇸  Super Mario 64 US
 #                              SHA-1: 9BEF1128717F958171A4AFAC3ED78EE2BB4E86CE
 #
 # CHANGELOG
+#   v0.12 (2026-05-05) - Repo renamed from sm64ex-macaroni → sm64-macaroni to
+#                        reflect dual-family scope (sm64ex no longer the only
+#                        target). Header branding updated; no behavior change.
 #   v0.11 (2026-05-05) - Added `cmake` to common base deps in support of the
 #                        libultraship build family (Ghostship preset). CMake
 #                        is needed by the build script regardless of which
@@ -40,7 +43,7 @@
 
 set -eo pipefail
 
-VERSION="0.11"
+VERSION="0.12"
 SCRIPT_DIR="${0:A:h}"
 TIMESTAMP="$(date '+%Y%m%d-%H%M')"
 LOG_DIR="$SCRIPT_DIR/logs"

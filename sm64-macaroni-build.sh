@@ -1,6 +1,6 @@
 #!/bin/zsh
 # sm64-macaroni-build.sh
-# sm64ex Macaroni — Intel Mac / macOS Tahoe build script
+# sm64 Macaroni — Intel Mac / macOS Tahoe build script
 #
 # Clones or updates one of three supported sm64ex-family upstreams, copies the
 # US ROM into place, runs extract_assets.py, and compiles via gmake OSX_BUILD=1.
@@ -30,6 +30,10 @@
 #              build-coopdx-20260505-1108.log
 #
 # CHANGELOG
+#   v0.12 (2026-05-05) - Repo renamed from sm64ex-macaroni → sm64-macaroni to
+#                        reflect dual-family scope. Header branding updated;
+#                        no behavior change. (BUILD_FAMILY rework + Ghostship
+#                        preset land in v0.13.)
 #   v0.11 (2026-05-05) - Log filename now includes upstream preset
 #                        (build-<preset>-<ts>.log) so multiple presets can be
 #                        built in succession without their logs colliding;
@@ -44,7 +48,7 @@
 
 set -eo pipefail
 
-VERSION="0.11"
+VERSION="0.12"
 SCRIPT_DIR="${0:A:h}"
 ROM_SHA1="9BEF1128717F958171A4AFAC3ED78EE2BB4E86CE"
 

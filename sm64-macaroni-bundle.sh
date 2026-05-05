@@ -1,6 +1,6 @@
 #!/bin/zsh
 # sm64-macaroni-bundle.sh
-# sm64ex Macaroni — Intel Mac / macOS Tahoe app bundle creator
+# sm64 Macaroni — Intel Mac / macOS Tahoe app bundle creator
 #
 # Wraps the compiled sm64ex-family binary into a proper .app bundle. The real
 # binary is placed at Contents/MacOS/<Name>Bin behind a zsh wrapper that sets
@@ -33,6 +33,16 @@
 #     (placeholder)           ← final fallback: Mario-red stub
 #
 # CHANGELOG
+#   v0.13 (2026-05-05) - Repo renamed from sm64ex-macaroni → sm64-macaroni to
+#                        reflect dual-family scope (sm64ex no longer the only
+#                        target). Bundle ID prefix migrated accordingly:
+#                            old:  com.mkoterski.sm64ex-macaroni.<preset>
+#                            new:  com.mkoterski.sm64-macaroni.<preset>
+#                        Users with previously-bundled .app installs may see
+#                        macOS treat the new build as a separate app on first
+#                        launch — delete the old one from /Applications to
+#                        keep things tidy.
+#                        Header branding updated.
 #   v0.12 (2026-05-05) - Log filename now includes upstream preset
 #                        (bundle-<preset>-<ts>.log) so multiple presets can be
 #                        bundled in succession without their logs colliding;
@@ -58,7 +68,7 @@
 
 set -eo pipefail
 
-VERSION="0.12"
+VERSION="0.13"
 SCRIPT_DIR="${0:A:h}"
 DIST_DIR="$SCRIPT_DIR/dist"
 
@@ -108,24 +118,24 @@ case "$UPSTREAM" in
         REPO_NAME="sm64ex"
         BIN_NAME_PRIMARY="sm64.us.f3dex2e"
         APP_NAME="sm64ex"
-        DISPLAY_NAME="Super Mario 64 (sm64ex Macaroni)"
-        BUNDLE_ID="com.mkoterski.sm64ex-macaroni.sm64ex"
+        DISPLAY_NAME="Super Mario 64 (sm64 Macaroni)"
+        BUNDLE_ID="com.mkoterski.sm64-macaroni.sm64ex"
         ICON_BASENAME="sm64ex"
         ;;
     render96ex)
         REPO_NAME="Render96ex"
         BIN_NAME_PRIMARY="sm64.us.f3dex2e"
         APP_NAME="Render96"
-        DISPLAY_NAME="Super Mario 64 Render96 (Macaroni)"
-        BUNDLE_ID="com.mkoterski.sm64ex-macaroni.render96ex"
+        DISPLAY_NAME="Super Mario 64 Render96 (sm64 Macaroni)"
+        BUNDLE_ID="com.mkoterski.sm64-macaroni.render96ex"
         ICON_BASENAME="render96"
         ;;
     coopdx)
         REPO_NAME="sm64coopdx"
         BIN_NAME_PRIMARY="sm64coopdx"
         APP_NAME="sm64coopdx"
-        DISPLAY_NAME="Super Mario 64 Coop Deluxe (Macaroni)"
-        BUNDLE_ID="com.mkoterski.sm64ex-macaroni.coopdx"
+        DISPLAY_NAME="Super Mario 64 Coop Deluxe (sm64 Macaroni)"
+        BUNDLE_ID="com.mkoterski.sm64-macaroni.coopdx"
         ICON_BASENAME="sm64coopdx"
         ;;
     *)
