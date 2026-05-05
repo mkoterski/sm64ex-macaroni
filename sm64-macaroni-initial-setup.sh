@@ -3,14 +3,21 @@
 # sm64ex Macaroni — first-run setup for macOS Tahoe / Intel Mac
 #
 # Installs Xcode CLT, Homebrew, and the common build dependencies shared by
-# all supported upstreams (sm64ex, Render96ex, sm64coopdx):
-#   gcc, make, audiofile, sdl2, glew, glfw, pkg-config, dylibbundler,
-#   python3, git
+# all supported upstream presets across both build families:
+#
+#   sm64ex family       (gmake-based: sm64pc/sm64ex, Render96ex, sm64coopdx)
+#   libultraship family (CMake-based: HarbourMasters/Ghostship)
+#
+# Common base packages:
+#     gcc, make, cmake, audiofile, sdl2, glew, glfw, pkg-config,
+#     dylibbundler, python3, git
+#
 # Validates any ROM already present in the central roms/ directory.
 # Safe to re-run: all steps are idempotent.
 #
-# Upstream-specific extras (Lua, discord-rpc, etc.) are installed on first
-# build by sm64-macaroni-build.sh based on the --upstream flag.
+# Upstream-specific extras (Lua, discord-rpc, libultraship runtime libs,
+# etc.) are installed on first build by sm64-macaroni-build.sh based on the
+# --upstream flag.
 #
 # Usage:
 #     ./sm64-macaroni-initial-setup.sh
@@ -18,16 +25,22 @@
 # Output:
 #     sm64ex-macaroni/logs/initial-setup-<timestamp>.log
 #
-# ROM layout (place file here before building):
+# ROM layout (place file here before building — shared across all upstreams):
 #     roms/sm64.us.z64    🇺🇸  Super Mario 64 US
 #                              SHA-1: 9BEF1128717F958171A4AFAC3ED78EE2BB4E86CE
 #
 # CHANGELOG
+#   v0.11 (2026-05-05) - Added `cmake` to common base deps in support of the
+#                        libultraship build family (Ghostship preset). CMake
+#                        is needed by the build script regardless of which
+#                        gmake/cmake family is selected, so installing it
+#                        upfront avoids a re-prompt on first Ghostship build.
+#                        Updated header docs to reflect dual-family scope.
 #   v0.10 (2026-05-05) - Initial version; adapted from spmc-initial-setup.sh v0.10
 
 set -eo pipefail
 
-VERSION="0.10"
+VERSION="0.11"
 SCRIPT_DIR="${0:A:h}"
 TIMESTAMP="$(date '+%Y%m%d-%H%M')"
 LOG_DIR="$SCRIPT_DIR/logs"
@@ -70,17 +83,19 @@ fi
 echo "    ✅ $(brew --version | head -1)" | tee -a "$LOGFILE"
 
 # ── Step 3: Homebrew packages ─────────────────────────────────────────────────
-# Common base deps (haframjolk/sm64ex-mac minus mingw-w64, which is only needed
-# for the Windows cross-build):
-#     gcc make audiofile sdl2 glew glfw pkg-config dylibbundler
-# Plus python3 (required by extract_assets.py) and git.
+# Common base deps span both build families:
+#     sm64ex family (gmake):       gcc make audiofile sdl2 glew glfw
+#                                  pkg-config dylibbundler python3 git
+#     libultraship family (cmake): + cmake (asset processing happens at
+#                                  runtime in Ghostship, so no extra
+#                                  build-time deps beyond the CMake toolchain)
 #
 # Upstream-specific extras (e.g. discord-rpc + lua for sm64coopdx) are added
 # by sm64-macaroni-build.sh after the --upstream flag is resolved.
 echo "" | tee -a "$LOGFILE"
 echo "📦 Step 3: Homebrew packages" | tee -a "$LOGFILE"
 BREW_PKGS=(
-    gcc make audiofile
+    gcc make cmake audiofile
     sdl2 glew glfw
     pkg-config dylibbundler
     python3 git
@@ -95,10 +110,10 @@ for pkg in "${BREW_PKGS[@]}"; do
 done
 
 # ── Step 4: ROM status ────────────────────────────────────────────────────────
-# All supported upstreams (sm64ex, Render96ex, sm64coopdx) consume the same
-# US ROM via extract_assets.py us. The ROM is placed in the central roms/
-# directory (gitignored). The build script copies it into the cloned upstream
-# tree as baserom.us.z64 before invoking gmake.
+# All supported upstreams across both families consume the same US ROM.
+# sm64ex-family Makefiles read it from the upstream repo's baserom.us.z64
+# at build time; Ghostship reads it from the runtime working directory at
+# first launch and generates sm64.o2r from it.
 echo "" | tee -a "$LOGFILE"
 echo "🎮 Step 4: ROM status" | tee -a "$LOGFILE"
 echo "    Checking roms/ directory: $SCRIPT_DIR/roms/" | tee -a "$LOGFILE"
@@ -128,8 +143,9 @@ echo "✅ sm64-macaroni-initial-setup.sh v$VERSION complete!" | tee -a "$LOGFILE
 echo "" | tee -a "$LOGFILE"
 echo "    Next steps:" | tee -a "$LOGFILE"
 echo "      1. Place ROM in roms/sm64.us.z64 (US, .z64 format)" | tee -a "$LOGFILE"
-echo "      2. ./sm64-macaroni-build.sh                  # default: sm64pc/sm64ex" | tee -a "$LOGFILE"
-echo "         ./sm64-macaroni-build.sh --upstream render96ex   # HD textures fork" | tee -a "$LOGFILE"
-echo "         ./sm64-macaroni-build.sh --upstream coopdx       # online co-op fork" | tee -a "$LOGFILE"
-echo "      3. ./run-sm64-macaroni-macos.sh              # launch Super Mario 64" | tee -a "$LOGFILE"
+echo "      2. ./sm64-macaroni-build.sh                       # default: sm64pc/sm64ex" | tee -a "$LOGFILE"
+echo "         ./sm64-macaroni-build.sh --upstream render96ex # HD textures fork" | tee -a "$LOGFILE"
+echo "         ./sm64-macaroni-build.sh --upstream coopdx     # online co-op fork" | tee -a "$LOGFILE"
+echo "         ./sm64-macaroni-build.sh --upstream ghostship  # HarbourMasters port (in flight)" | tee -a "$LOGFILE"
+echo "      3. ./run-sm64-macaroni.sh                         # launch latest build" | tee -a "$LOGFILE"
 echo "════════════════════════════════════════════════════════════════" | tee -a "$LOGFILE"
