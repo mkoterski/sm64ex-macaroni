@@ -2,73 +2,70 @@
 # sm64-macaroni-bundle.sh
 # sm64 Macaroni — Intel Mac / macOS Tahoe app bundle creator
 #
-# Wraps the compiled sm64ex-family binary into a proper .app bundle. The real
-# binary is placed at Contents/MacOS/<Name>Bin behind a zsh wrapper that sets
-# cwd to Contents/Resources/ so res/ (runtime assets baked by EXTERNAL_DATA=1)
-# resolves correctly. Bundles all Homebrew dylibs into Contents/libs/ via
-# dylibbundler so the .app runs without Homebrew installed. Ad-hoc codesigns
-# the bundle for Tahoe Gatekeeper.
+# Two bundling strategies based on what the upstream Makefile produces:
 #
-# Auto-detects the upstream from the most-recently-built binary, or use
+#   1. Build-from-scratch (sm64ex, render96ex):
+#      Upstream produces a bare binary at build/us_pc/<name>. We construct
+#      a .app bundle around it: cwd-wrapper, our Info.plist, our icon,
+#      dylibbundler-bundled Homebrew dylibs, ad-hoc codesign.
+#
+#   2. Adopt-upstream-app (coopdx):
+#      Upstream's Makefile already produces a complete, self-contained
+#      .app at build/us_pc/<name>.app — binary, sibling dylibs, and its
+#      own Info.plist all in place. We copy that .app to dist/, dedupe
+#      any duplicate LC_RPATH entries the linker accumulated, rewrite
+#      CFBundleIdentifier to our namespace (com.mkoterski.sm64-macaroni.*)
+#      so multiple Macaroni-bundled coopdx variants don't collide in
+#      Launch Services, and re-sign ad-hoc.
+#
+# Auto-detects the upstream from the most-recently-built artifact, or use
 # --upstream <preset> to force a specific tree.
 #
 # Usage:
 #     ./sm64-macaroni-bundle.sh                      # auto-detect
 #     ./sm64-macaroni-bundle.sh --upstream sm64ex
-#     ./sm64-macaroni-bundle.sh --upstream render96ex
 #     ./sm64-macaroni-bundle.sh --upstream coopdx
+#     ./sm64-macaroni-bundle.sh --upstream render96ex   # ❌ broken upstream
 #
 # Output:
 #     dist/<App>.app               ← drag-to-Applications ready
-#         dist/sm64ex.app          (sm64ex preset)
-#         dist/Render96.app        (render96ex preset)
-#         dist/sm64coopdx.app      (coopdx preset)
+#         dist/sm64ex.app          (sm64ex preset, build-from-scratch)
+#         dist/sm64coopdx.app      (coopdx preset, adopt-upstream-app)
 #     logs/bundle-<preset>-<timestamp>.log
-#         e.g. bundle-sm64ex-20260505-1115.log
-#              bundle-render96ex-20260505-1142.log
 #
-# Icon source (in priority order):
+# Icon source (build-from-scratch path only):
 #     src/icon.icns           ← preferred: use as-is
 #     src/icon.png            ← fallback: convert via sips + iconutil
 #     (placeholder)           ← final fallback: Mario-red stub
+# (coopdx adopt-upstream-app path keeps upstream's icon intact.)
 #
 # CHANGELOG
-#   v0.13 (2026-05-05) - Repo renamed from sm64ex-macaroni → sm64-macaroni to
-#                        reflect dual-family scope (sm64ex no longer the only
-#                        target). Bundle ID prefix migrated accordingly:
-#                            old:  com.mkoterski.sm64ex-macaroni.<preset>
-#                            new:  com.mkoterski.sm64-macaroni.<preset>
-#                        Users with previously-bundled .app installs may see
-#                        macOS treat the new build as a separate app on first
-#                        launch — delete the old one from /Applications to
-#                        keep things tidy.
-#                        Header branding updated.
-#   v0.12 (2026-05-05) - Log filename now includes upstream preset
-#                        (bundle-<preset>-<ts>.log) so multiple presets can be
-#                        bundled in succession without their logs colliding;
-#                        success summary now explicitly states upstream
-#   v0.11 (2026-05-05) - Fix: SIGABRT at launch on Tahoe due to duplicate
-#                        LC_RPATH '@executable_path/../libs/' in the bundled
-#                        binary. sm64ex's Makefile (OSX_BUILD=1 path) adds this
-#                        rpath at link time for haframjolk-style bundling, AND
-#                        dylibbundler adds the same rpath again when patching
-#                        load commands. dyld on macOS 14+ refuses to load a
-#                        binary with duplicate LC_RPATH entries and aborts
-#                        before any code runs ("Namespace DYLD, Code 0,
-#                        duplicate LC_RPATH ..."). Added Step 7.5 to enumerate
-#                        and dedupe rpaths via otool + install_name_tool
-#                        between dylibbundler and codesign.
-#   v0.10 (2026-05-05) - Initial version; adapted from spmc-bundle.sh v0.10;
-#                        multi-upstream preset table (sm64ex / render96ex /
-#                        coopdx); cwd wrapper pattern for res/ resolution;
-#                        dylibbundler step (haframjolk-style bundling);
-#                        ad-hoc codesign for Tahoe Gatekeeper;
-#                        output to dist/ at wrapper repo root (not nested in
-#                        upstream tree)
+#   v0.14 (2026-05-06) - Added adopt-upstream-app strategy for coopdx, where
+#                        the upstream Makefile (OSX_APP_BUILD path) already
+#                        produces a complete .app at build/us_pc/sm64coopdx
+#                        .app. Copying + sanitizing that .app is meaningfully
+#                        cleaner than the build-from-scratch approach used
+#                        for sm64ex — upstream knows its own dylib layout
+#                        better than we do, so we don't run dylibbundler or
+#                        author our own Info.plist for it. Strategy is
+#                        keyed off a per-preset UPSTREAM_PROVIDES_APP flag.
+#                        sm64ex / render96ex retain the original build-
+#                        from-scratch path. Both strategies share the
+#                        LC_RPATH dedup + ad-hoc codesign tail.
+#                        Bundle ID rewrite for coopdx: upstream sets its
+#                        own CFBundleIdentifier, but we want a stable
+#                        com.mkoterski.sm64-macaroni.* namespace so that
+#                        any future Macaroni-bundled variants live
+#                        peacefully alongside any direct upstream install.
+#   v0.13 (2026-05-05) - Repo renamed sm64ex-macaroni → sm64-macaroni,
+#                        bundle ID prefix migrated.
+#   v0.12 (2026-05-05) - Log filename includes upstream preset.
+#   v0.11 (2026-05-05) - Step 7.5 LC_RPATH dedup fix for dyld SIGABRT.
+#   v0.10 (2026-05-05) - Initial version; adapted from spmc-bundle.sh v0.10.
 
 set -eo pipefail
 
-VERSION="0.13"
+VERSION="0.14"
 SCRIPT_DIR="${0:A:h}"
 DIST_DIR="$SCRIPT_DIR/dist"
 
@@ -80,21 +77,19 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
             exit 0 ;;
-        *) echo "Usage: $0 [--upstream <sm64ex|render96ex|coopdx>]" >&2; exit 1 ;;
+        *) echo "Usage: $0 [--upstream <sm64ex|coopdx|render96ex>]" >&2; exit 1 ;;
     esac
 done
 
 # ── Auto-detect upstream if not specified ─────────────────────────────────────
-# Walk the same preset dirs as the run script and pick the most-recently-built
-# binary. We need the upstream identity to resolve bundle name, bundle ID,
-# and display name from the preset table below.
 typeset -A PRESET_DIR
-PRESET_DIR=(sm64ex "sm64ex" render96ex "Render96ex" coopdx "sm64coopdx")
+PRESET_DIR=(sm64ex "sm64ex" coopdx "sm64coopdx" render96ex "Render96ex")
 
 if [[ -z "$UPSTREAM" ]]; then
     LATEST_MTIME=0
-    for p in sm64ex render96ex coopdx; do
+    for p in sm64ex coopdx render96ex; do
         for bin in "$SCRIPT_DIR/${PRESET_DIR[$p]}/build/us_pc/sm64.us.f3dex2e" \
+                   "$SCRIPT_DIR/${PRESET_DIR[$p]}/build/us_pc/sm64coopdx.app/Contents/MacOS/sm64coopdx" \
                    "$SCRIPT_DIR/${PRESET_DIR[$p]}/build/us_pc/sm64coopdx" \
                    "$SCRIPT_DIR/${PRESET_DIR[$p]}/build/us_pc/sm64ex"; do
             if [[ -f "$bin" ]]; then
@@ -113,6 +108,9 @@ if [[ -z "$UPSTREAM" ]]; then
 fi
 
 # ── Resolve --upstream preset → bundle metadata tuple ─────────────────────────
+# UPSTREAM_PROVIDES_APP toggles the bundling strategy:
+#   0: build-from-scratch — we author Info.plist, dylibbundler, etc.
+#   1: adopt-upstream-app — copy upstream's .app, sanitize, re-sign
 case "$UPSTREAM" in
     sm64ex)
         REPO_NAME="sm64ex"
@@ -121,6 +119,8 @@ case "$UPSTREAM" in
         DISPLAY_NAME="Super Mario 64 (sm64 Macaroni)"
         BUNDLE_ID="com.mkoterski.sm64-macaroni.sm64ex"
         ICON_BASENAME="sm64ex"
+        UPSTREAM_PROVIDES_APP=0
+        UPSTREAM_APP_PATH=""  # built by us
         ;;
     render96ex)
         REPO_NAME="Render96ex"
@@ -129,6 +129,8 @@ case "$UPSTREAM" in
         DISPLAY_NAME="Super Mario 64 Render96 (sm64 Macaroni)"
         BUNDLE_ID="com.mkoterski.sm64-macaroni.render96ex"
         ICON_BASENAME="render96"
+        UPSTREAM_PROVIDES_APP=0
+        UPSTREAM_APP_PATH=""
         ;;
     coopdx)
         REPO_NAME="sm64coopdx"
@@ -137,10 +139,12 @@ case "$UPSTREAM" in
         DISPLAY_NAME="Super Mario 64 Coop Deluxe (sm64 Macaroni)"
         BUNDLE_ID="com.mkoterski.sm64-macaroni.coopdx"
         ICON_BASENAME="sm64coopdx"
+        UPSTREAM_PROVIDES_APP=1
+        UPSTREAM_APP_PATH="$SCRIPT_DIR/sm64coopdx/build/us_pc/sm64coopdx.app"
         ;;
     *)
         echo "❌ Unknown --upstream preset: $UPSTREAM" >&2
-        echo "   Valid: sm64ex, render96ex, coopdx" >&2
+        echo "   Valid: sm64ex, coopdx, render96ex" >&2
         exit 1 ;;
 esac
 
@@ -162,13 +166,134 @@ echo "    Upstream:    $UPSTREAM ($REPO_NAME)" | tee -a "$LOGFILE"
 echo "    App:         $APP_NAME.app" | tee -a "$LOGFILE"
 echo "    Bundle ID:   $BUNDLE_ID" | tee -a "$LOGFILE"
 echo "    Output:      $BUNDLE" | tee -a "$LOGFILE"
+echo "    Strategy:    $([[ $UPSTREAM_PROVIDES_APP -eq 1 ]] && echo "adopt-upstream-app" || echo "build-from-scratch")" | tee -a "$LOGFILE"
 echo "    Log:         $LOGFILE" | tee -a "$LOGFILE"
+
+# ────────────────────────────────────────────────────────────────────────────
+# Shared helper: dedupe LC_RPATH entries.
+#
+# Used by both bundling strategies, but for different reasons:
+#   - build-from-scratch: sm64ex's link-time rpath + dylibbundler's rpath
+#     produce duplicates that dyld 14+ rejects (SIGABRT before any code runs).
+#   - adopt-upstream-app: upstream's linker may emit duplicates from multiple
+#     LDFLAGS slots (we saw 4× in the build script log for sm64coopdx).
+#     Same dyld behavior, same fix.
+# ────────────────────────────────────────────────────────────────────────────
+get_rpaths() {
+    otool -l "$1" | awk '
+        /cmd LC_RPATH/ { in_lc=1; next }
+        in_lc && /^[[:space:]]*path / {
+            sub(/^[[:space:]]*path /, "")
+            sub(/ \(offset.*$/, "")
+            print
+            in_lc=0
+        }'
+}
+
+dedupe_rpaths() {
+    local bin="$1"
+    local orig_rpaths
+    orig_rpaths=("${(@f)$(get_rpaths "$bin")}")
+    orig_rpaths=("${(@)orig_rpaths:#}")
+    local unique_rpaths
+    unique_rpaths=("${(@u)orig_rpaths}")
+
+    while true; do
+        local next
+        next="$(get_rpaths "$bin" | head -1)"
+        [[ -z "$next" ]] && break
+        install_name_tool -delete_rpath "$next" "$bin" 2>&1 | tee -a "$LOGFILE" || break
+    done
+    for rpath in "${unique_rpaths[@]}"; do
+        [[ -z "$rpath" ]] && continue
+        install_name_tool -add_rpath "$rpath" "$bin" 2>&1 | tee -a "$LOGFILE"
+    done
+    echo "    ✅ ${#orig_rpaths[@]} rpath(s) → ${#unique_rpaths[@]} unique" | tee -a "$LOGFILE"
+    echo "       Final rpaths in binary:" | tee -a "$LOGFILE"
+    get_rpaths "$bin" | sed 's/^/         · /' | tee -a "$LOGFILE"
+}
+
+# ════════════════════════════════════════════════════════════════════════════
+# Strategy A: adopt-upstream-app (coopdx)
+# ════════════════════════════════════════════════════════════════════════════
+if (( UPSTREAM_PROVIDES_APP )); then
+    echo "" | tee -a "$LOGFILE"
+    echo "🔍 Preflight checks" | tee -a "$LOGFILE"
+    if [[ ! -d "$UPSTREAM_APP_PATH" ]]; then
+        echo "    ❌ Upstream .app not found at:" | tee -a "$LOGFILE"
+        echo "       $UPSTREAM_APP_PATH" | tee -a "$LOGFILE"
+        echo "       Run: ./sm64-macaroni-build.sh --upstream $UPSTREAM" | tee -a "$LOGFILE"
+        exit 1
+    fi
+    UPSTREAM_BIN="$UPSTREAM_APP_PATH/Contents/MacOS/$BIN_NAME_PRIMARY"
+    if [[ ! -f "$UPSTREAM_BIN" ]]; then
+        echo "    ❌ Upstream .app is malformed — missing binary at:" | tee -a "$LOGFILE"
+        echo "       Contents/MacOS/$BIN_NAME_PRIMARY" | tee -a "$LOGFILE"
+        exit 1
+    fi
+    echo "    ✅ Upstream .app: $(du -sh "$UPSTREAM_APP_PATH" | cut -f1)" | tee -a "$LOGFILE"
+    echo "    ✅ Binary:        ${BIN_NAME_PRIMARY} ($(du -h "$UPSTREAM_BIN" | cut -f1))" | tee -a "$LOGFILE"
+
+    # Step 1: copy the upstream .app verbatim.
+    echo "" | tee -a "$LOGFILE"
+    echo "📋 Step 1: Copy upstream .app → dist/" | tee -a "$LOGFILE"
+    rm -rf "$BUNDLE"
+    cp -R "$UPSTREAM_APP_PATH" "$BUNDLE"
+    echo "    ✅ $BUNDLE ($(du -sh "$BUNDLE" | cut -f1))" | tee -a "$LOGFILE"
+
+    # Step 2: rewrite CFBundleIdentifier to our namespace.
+    # We use PlistBuddy (ships with macOS) for a robust XML edit. defaults(1)
+    # would also work but rewrites the whole plist in binary format, which
+    # is harder to inspect during debugging.
+    echo "" | tee -a "$LOGFILE"
+    echo "🪪 Step 2: Rewrite CFBundleIdentifier → $BUNDLE_ID" | tee -a "$LOGFILE"
+    PLIST="$BUNDLE/Contents/Info.plist"
+    OLD_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST" 2>/dev/null || echo "<unset>")"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$PLIST" 2>&1 | tee -a "$LOGFILE" || \
+        /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $BUNDLE_ID" "$PLIST" 2>&1 | tee -a "$LOGFILE"
+    echo "    ✅ Was: $OLD_BUNDLE_ID" | tee -a "$LOGFILE"
+    echo "    ✅ Now: $BUNDLE_ID" | tee -a "$LOGFILE"
+
+    # Step 3: dedupe LC_RPATH entries on the binary.
+    echo "" | tee -a "$LOGFILE"
+    echo "🧹 Step 3: Dedupe LC_RPATH entries" | tee -a "$LOGFILE"
+    BIN="$BUNDLE/Contents/MacOS/$BIN_NAME_PRIMARY"
+    dedupe_rpaths "$BIN"
+
+    # Step 4: quarantine attrs + ad-hoc codesign.
+    echo "" | tee -a "$LOGFILE"
+    echo "🛡  Step 4: Quarantine attrs + ad-hoc codesign" | tee -a "$LOGFILE"
+    xattr -cr "$BUNDLE" 2>&1 | tee -a "$LOGFILE" || true
+    codesign --sign - --force --deep "$BUNDLE" 2>&1 | tee -a "$LOGFILE"
+    echo "    ✅ ad-hoc signed" | tee -a "$LOGFILE"
+
+    # Step 5: verify.
+    echo "" | tee -a "$LOGFILE"
+    echo "🔍 Step 5: Verify bundle" | tee -a "$LOGFILE"
+    echo "    Binary:    $(file "$BIN" | grep -o 'Mach-O.*')" | tee -a "$LOGFILE"
+    echo "    Bundle:    $(du -sh "$BUNDLE" | cut -f1) total" | tee -a "$LOGFILE"
+    echo "    Bundle ID: $(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST" 2>/dev/null)" | tee -a "$LOGFILE"
+    echo "    Signature: $(codesign -dv "$BUNDLE" 2>&1 | grep -i 'signature' | head -1)" | tee -a "$LOGFILE"
+
+    echo "" | tee -a "$LOGFILE"
+    echo "════════════════════════════════════════════════════════════════" | tee -a "$LOGFILE"
+    echo "✅ sm64-macaroni-bundle.sh v$VERSION complete!" | tee -a "$LOGFILE"
+    echo "    🎯 Upstream: $UPSTREAM ($REPO_NAME) — adopt-upstream-app" | tee -a "$LOGFILE"
+    echo "    📍 $BUNDLE" | tee -a "$LOGFILE"
+    echo "    📄 $LOGFILE" | tee -a "$LOGFILE"
+    echo "    👉 Test:    open \"$BUNDLE\"" | tee -a "$LOGFILE"
+    echo "════════════════════════════════════════════════════════════════" | tee -a "$LOGFILE"
+    exit 0
+fi
+
+# ════════════════════════════════════════════════════════════════════════════
+# Strategy B: build-from-scratch (sm64ex, render96ex)
+# ════════════════════════════════════════════════════════════════════════════
 
 # ── Locate binary ─────────────────────────────────────────────────────────────
 BINARY=""
 for candidate in "$BUILD_DIR/$BIN_NAME_PRIMARY" \
                  "$BUILD_DIR/sm64.us.f3dex2e" \
-                 "$BUILD_DIR/sm64coopdx" \
                  "$BUILD_DIR/sm64ex"; do
     [[ -f "$candidate" ]] && BINARY="$candidate" && break
 done
@@ -200,8 +325,6 @@ fi
 echo "    ✅ $(dylibbundler --version 2>&1 | head -1)" | tee -a "$LOGFILE"
 
 # ── Step 1: Resolve icon ──────────────────────────────────────────────────────
-# Priority: src/icon.icns → src/icon.png (convert) → generated placeholder.
-# The generated placeholder uses Mario-red (#E60012, the iconic hat color).
 echo "" | tee -a "$LOGFILE"
 echo "🖼  Step 1: Icon" | tee -a "$LOGFILE"
 ICNS_BUILT="$LOG_DIR/$ICON_BASENAME.icns"
@@ -262,9 +385,6 @@ mkdir -p "$BUNDLE/Contents/libs"
 echo "    ✅ $BUNDLE" | tee -a "$LOGFILE"
 
 # ── Step 3: Binary + cwd wrapper ──────────────────────────────────────────────
-# The wrapper sets DYLD fallback paths and cds to Contents/Resources/ so the
-# binary's cwd-relative res/ lookup resolves. The real binary is renamed
-# *Bin so the user-visible bundle launcher matches CFBundleExecutable.
 echo "" | tee -a "$LOGFILE"
 echo "📦 Step 3: Binary + wrapper..." | tee -a "$LOGFILE"
 cp "$BINARY" "$BUNDLE/Contents/MacOS/${APP_NAME}Bin"
@@ -288,8 +408,6 @@ cp "$ICNS_BUILT" "$ICNS_DEST"
 echo "    ✅ ${ICON_BASENAME}.icns" | tee -a "$LOGFILE"
 
 # ── Step 5: Runtime assets ────────────────────────────────────────────────────
-# With EXTERNAL_DATA=1, sm64ex looks for res/ next to the binary at runtime
-# (or cwd-relative). The wrapper cds to Resources/ so res/ goes there.
 echo "" | tee -a "$LOGFILE"
 echo "📦 Step 5: Runtime assets" | tee -a "$LOGFILE"
 if (( RES_FOUND )); then
@@ -325,10 +443,6 @@ echo "    ✅ CFBundleIdentifier: $BUNDLE_ID" | tee -a "$LOGFILE"
 echo "    ✅ LSMinimumSystemVersion: 10.9" | tee -a "$LOGFILE"
 
 # ── Step 7: Bundle dylibs (haframjolk pattern) ────────────────────────────────
-# dylibbundler walks the binary's @rpath/@executable_path/@loader_path load
-# commands, copies referenced dylibs into Contents/libs/, and rewrites the
-# binary to use @executable_path/../libs/<dylib>. Result: the .app runs on
-# any Intel Mac without Homebrew installed.
 echo "" | tee -a "$LOGFILE"
 echo "🔗 Step 7: Bundle dylibs via dylibbundler" | tee -a "$LOGFILE"
 dylibbundler -b -cd -of \
@@ -340,65 +454,11 @@ LIB_COUNT=$(ls -1 "$BUNDLE/Contents/libs/" 2>/dev/null | wc -l | tr -d ' ')
 echo "    ✅ $LIB_COUNT dylib(s) bundled, $(du -sh "$BUNDLE/Contents/libs" | cut -f1) total" | tee -a "$LOGFILE"
 
 # ── Step 7.5: Dedupe LC_RPATH entries ─────────────────────────────────────────
-# sm64ex's Makefile (OSX_BUILD=1 path) adds @executable_path/../libs/ as an
-# LC_RPATH at link time, intended for haframjolk-style bundling. dylibbundler
-# adds the same rpath again when it patches load commands. Result: the Mach-O
-# has two identical LC_RPATH entries.
-#
-# dyld on macOS 14+ became strict about duplicate rpaths and aborts process
-# launch with SIGABRT before any code runs:
-#     "Termination Reason: Namespace DYLD, Code 0,
-#      duplicate LC_RPATH '@executable_path/../libs/'"
-#
-# Fix: enumerate all LC_RPATH paths via otool, delete every occurrence
-# (install_name_tool -delete_rpath only removes one match per call, hence the
-# loop), then re-add only the unique set. Has to run before codesign because
-# load-command edits invalidate the existing signature.
 echo "" | tee -a "$LOGFILE"
 echo "🧹 Step 7.5: Dedupe LC_RPATH entries" | tee -a "$LOGFILE"
-BIN="$BUNDLE/Contents/MacOS/${APP_NAME}Bin"
-
-get_rpaths() {
-    otool -l "$1" | awk '
-        /cmd LC_RPATH/ { in_lc=1; next }
-        in_lc && /^[[:space:]]*path / {
-            sub(/^[[:space:]]*path /, "")
-            sub(/ \(offset.*$/, "")
-            print
-            in_lc=0
-        }'
-}
-
-# Snapshot the original list (preserving duplicates) and the unique set.
-ORIG_RPATHS=("${(@f)$(get_rpaths "$BIN")}")
-ORIG_RPATHS=("${(@)ORIG_RPATHS:#}")          # drop empty entries
-UNIQUE_RPATHS=("${(@u)ORIG_RPATHS}")          # zsh (u) flag: deduplicate
-
-# Delete every rpath in load order. install_name_tool removes only the first
-# occurrence per call, so we re-query the head of the list each iteration.
-while true; do
-    NEXT="$(get_rpaths "$BIN" | head -1)"
-    [[ -z "$NEXT" ]] && break
-    install_name_tool -delete_rpath "$NEXT" "$BIN" 2>&1 | tee -a "$LOGFILE" || break
-done
-
-# Re-add the unique rpaths in their original first-seen order.
-for rpath in "${UNIQUE_RPATHS[@]}"; do
-    [[ -z "$rpath" ]] && continue
-    install_name_tool -add_rpath "$rpath" "$BIN" 2>&1 | tee -a "$LOGFILE"
-done
-
-echo "    ✅ ${#ORIG_RPATHS[@]} rpath(s) → ${#UNIQUE_RPATHS[@]} unique" | tee -a "$LOGFILE"
-echo "       Final rpaths in binary:" | tee -a "$LOGFILE"
-get_rpaths "$BIN" | sed 's/^/         · /' | tee -a "$LOGFILE"
+dedupe_rpaths "$BUNDLE/Contents/MacOS/${APP_NAME}Bin"
 
 # ── Step 8: Quarantine attrs + ad-hoc codesign ────────────────────────────────
-# xattr -cr alone is not sufficient on Tahoe (per spaghettikart-maccheese
-# notes) — Gatekeeper additionally requires the bundle to be signed. Ad-hoc
-# signing (-) skips the developer cert requirement and works for personal
-# use; users still get the right-click → Open prompt on first launch but
-# the binary itself doesn't get killed. Must run AFTER Step 7.5 because
-# load-command edits invalidate any existing signature.
 echo "" | tee -a "$LOGFILE"
 echo "🛡  Step 8: Quarantine attrs + ad-hoc codesign" | tee -a "$LOGFILE"
 xattr -cr "$BUNDLE" 2>&1 | tee -a "$LOGFILE" || true
@@ -421,7 +481,7 @@ echo "    Signature: $(codesign -dv "$BUNDLE" 2>&1 | grep -i 'signature' | head 
 echo "" | tee -a "$LOGFILE"
 echo "════════════════════════════════════════════════════════════════" | tee -a "$LOGFILE"
 echo "✅ sm64-macaroni-bundle.sh v$VERSION complete!" | tee -a "$LOGFILE"
-echo "    🎯 Upstream: $UPSTREAM ($REPO_NAME)" | tee -a "$LOGFILE"
+echo "    🎯 Upstream: $UPSTREAM ($REPO_NAME) — build-from-scratch" | tee -a "$LOGFILE"
 echo "    📍 $BUNDLE" | tee -a "$LOGFILE"
 echo "    📄 $LOGFILE" | tee -a "$LOGFILE"
 echo "    👉 Test:    open \"$BUNDLE\"" | tee -a "$LOGFILE"

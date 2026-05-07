@@ -2,53 +2,74 @@
 # sm64-macaroni-build.sh
 # sm64 Macaroni — Intel Mac / macOS Tahoe build script
 #
-# Clones or updates one of three supported sm64ex-family upstreams, copies the
-# US ROM into place, runs extract_assets.py, and compiles via gmake OSX_BUILD=1.
-# The ROM is sourced from the central roms/ directory.
+# Clones or updates one of the supported sm64ex-family upstreams, copies the
+# US ROM into place, runs extract_assets.py, applies preset-specific source
+# patches if needed, and compiles via gmake OSX_BUILD=1. The ROM is sourced
+# from the central roms/ directory.
 #
 # Supported upstreams (--upstream flag):
 #   sm64ex      sm64pc/sm64ex                (default; vanilla + options menu)
+#                                            ✅ builds and runs on Tahoe
+#   coopdx      coop-deluxe/sm64coopdx       (online co-op + Lua mod API;
+#                                            upstream self-bundles via
+#                                            OSX_APP_BUILD)
+#                                            ✅ builds; runtime test pending
 #   render96ex  Render96/Render96ex          (HD model/texture pack support)
-#   coopdx      coop-deluxe/sm64coopdx       (online co-op + Lua mod API)
+#                                            ❌ broken upstream — see README
+#                                            "Known issues". Patches 1–5 in
+#                                            this script land cleanly but a
+#                                            6th (cpp linemarker mangling)
+#                                            blocks the build. Kept in place
+#                                            for anyone iterating against a
+#                                            different render96 fork via
+#                                            --upstream-url.
 #
 # Usage:
 #     ./sm64-macaroni-build.sh                          # default: sm64ex
-#     ./sm64-macaroni-build.sh --upstream render96ex
 #     ./sm64-macaroni-build.sh --upstream coopdx
+#     ./sm64-macaroni-build.sh --upstream render96ex    # ❌ known broken
 #     ./sm64-macaroni-build.sh --upstream-url <git-url> # arbitrary fork
 #     ./sm64-macaroni-build.sh --skip-deps              # skip Homebrew dep check
 #
-# ROM layout (place file here — shared across all upstream presets):
-#     roms/sm64.us.z64    🇺🇸  Super Mario 64 US
-#                              SHA-1: 9BEF1128717F958171A4AFAC3ED78EE2BB4E86CE
-#                              (copied to <upstream>/baserom.us.z64 by this script)
-#
 # Log output:
 #     logs/build-<preset>-<timestamp>.log
-#         e.g. build-sm64ex-20260505-1015.log
-#              build-render96ex-20260505-1042.log
-#              build-coopdx-20260505-1108.log
 #
 # CHANGELOG
-#   v0.12 (2026-05-05) - Repo renamed from sm64ex-macaroni → sm64-macaroni to
-#                        reflect dual-family scope. Header branding updated;
-#                        no behavior change. (BUILD_FAMILY rework + Ghostship
-#                        preset land in v0.13.)
-#   v0.11 (2026-05-05) - Log filename now includes upstream preset
-#                        (build-<preset>-<ts>.log) so multiple presets can be
-#                        built in succession without their logs colliding;
-#                        fixed stale "run-sm64-macaroni-macos.sh" reference in
-#                        the success summary (now run-sm64-macaroni.sh)
-#   v0.10 (2026-05-05) - Initial version; adapted from spmc-build.sh v0.13;
-#                        gmake OSX_BUILD=1 build chain (no cmake);
-#                        extract_assets.py us replaces ExtractAssets cmake target;
-#                        --upstream preset table for sm64ex / render96ex / coopdx;
-#                        --upstream-url escape hatch for arbitrary forks;
-#                        Homebrew deps inline; ROM auto-copy
+#   v0.18 (2026-05-06) - Render96ex marked broken upstream. After 5 iterative
+#                        fixes (v0.14–v0.17) the next failure surfaced inside
+#                        a silenced Makefile rule that emits malformed
+#                        generated headers due to cpp-15 linemarker output
+#                        differences from cpp-9. The dependency chain of
+#                        upstream-specific patches needed to bring render96ex
+#                        up on Tahoe makes this wrapper effectively a fork
+#                        of a fork — outside the scope of what these scripts
+#                        should be doing.
+#                        Behavior: a warning block prints before Step 1 when
+#                        --upstream render96ex is selected, with workaround
+#                        guidance. The build still attempts to run (does not
+#                        bail) so anyone iterating against a different
+#                        render96 fork via --upstream-url benefits from
+#                        Patches 1–5 already in Step 6.5.
+#                        sm64ex and coopdx unaffected.
+#   v0.17 (2026-05-05) - CPATH=/usr/local/include export for render96ex to
+#                        resolve <SDL2/SDL.h> against Homebrew's
+#                        -I/usr/local/include/SDL2 cflags layout.
+#   v0.16 (2026-05-05) - Detect highest-numbered cpp-N from /usr/local/bin
+#                        and pass as `CPP=cpp-N` to override render96ex's
+#                        Makefile hardcode of cpp-9.
+#   v0.15 (2026-05-05) - Patch 1 rewritten with sm64-macaroni-owned sentinel
+#                        comment (false-positive in v0.14's grep).
+#   v0.14 (2026-05-05) - Added Step 6.5: render96ex-specific source patches
+#                        (3 total) for Tahoe-era clang.
+#   v0.13 (2026-05-05) - Extended binary discovery to include upstream-created
+#                        .app bundles (coopdx OSX_APP_BUILD pattern).
+#   v0.12 (2026-05-05) - Repo renamed sm64ex-macaroni → sm64-macaroni.
+#   v0.11 (2026-05-05) - Log filename includes upstream preset.
+#   v0.10 (2026-05-05) - Initial version; adapted from spmc-build.sh v0.13.
 
 set -eo pipefail
 
-VERSION="0.12"
+VERSION="0.18"
 SCRIPT_DIR="${0:A:h}"
 ROM_SHA1="9BEF1128717F958171A4AFAC3ED78EE2BB4E86CE"
 
@@ -66,19 +87,12 @@ while [[ $# -gt 0 ]]; do
             exit 0 ;;
         *)
             echo "Unknown option: $1" >&2
-            echo "Usage: $0 [--upstream <sm64ex|render96ex|coopdx>] [--upstream-url <url>] [--skip-deps]" >&2
+            echo "Usage: $0 [--upstream <sm64ex|coopdx|render96ex>] [--upstream-url <url>] [--skip-deps]" >&2
             exit 1 ;;
     esac
 done
 
 # ── Resolve --upstream preset → tuple ─────────────────────────────────────────
-# Each preset defines:
-#     UPSTREAM_LABEL       human-readable name for logs
-#     UPSTREAM_GIT         default git URL (overridable via --upstream-url)
-#     REPO_NAME            local clone directory name (under SCRIPT_DIR)
-#     BINARY_REL           expected relative path of built binary, or "" to discover
-#     EXTRA_BREW_PKGS      preset-specific Homebrew deps on top of the common base
-#     EXTRA_MAKE_FLAGS     preset-specific gmake variables on top of OSX_BUILD=1
 case "$UPSTREAM" in
     sm64ex)
         UPSTREAM_LABEL="sm64pc/sm64ex"
@@ -100,23 +114,29 @@ case "$UPSTREAM" in
         UPSTREAM_LABEL="coop-deluxe/sm64coopdx"
         UPSTREAM_GIT="https://github.com/coop-deluxe/sm64coopdx.git"
         REPO_NAME="sm64coopdx"
-        BINARY_REL=""  # discovered at validation step (name varies by version)
+        BINARY_REL="build/us_pc/sm64coopdx.app/Contents/MacOS/sm64coopdx"
         EXTRA_BREW_PKGS=(curl coreutils)
         EXTRA_MAKE_FLAGS=()
         ;;
     *)
         echo "❌ Unknown --upstream preset: $UPSTREAM" >&2
-        echo "   Valid: sm64ex, render96ex, coopdx" >&2
+        echo "   Valid: sm64ex, coopdx, render96ex" >&2
         echo "   For arbitrary forks, also pass --upstream-url <git-url>" >&2
         exit 1 ;;
 esac
 
-# --upstream-url overrides only the git URL; preset still determines binary path,
-# extra deps, and make flags. Use this for sm64ex-derived forks (e.g. sm64ex-alo,
-# sm64ex-coop pre-coopdx) that share the sm64ex Makefile contract.
 if [[ -n "$UPSTREAM_URL_OVERRIDE" ]]; then
     UPSTREAM_LABEL="$UPSTREAM (custom URL)"
     UPSTREAM_GIT="$UPSTREAM_URL_OVERRIDE"
+fi
+
+# ── Render96ex CPP detection ─────────────────────────────────────────────────
+if [[ "$UPSTREAM" == "render96ex" ]]; then
+    DETECTED_CPP="$(ls /usr/local/bin/cpp-* 2>/dev/null | grep -E '/cpp-[0-9]+$' | sort -V | tail -1)"
+    if [[ -n "$DETECTED_CPP" ]]; then
+        DETECTED_CPP_BASENAME="$(basename "$DETECTED_CPP")"
+        EXTRA_MAKE_FLAGS+=("CPP=$DETECTED_CPP_BASENAME")
+    fi
 fi
 
 REPO_DIR="$SCRIPT_DIR/$REPO_NAME"
@@ -136,10 +156,42 @@ echo "    Repo dir:    $REPO_DIR" | tee -a "$LOGFILE"
 echo "    Make flags:  OSX_BUILD=1 ${EXTRA_MAKE_FLAGS[*]}" | tee -a "$LOGFILE"
 echo "    Log:         $LOGFILE" | tee -a "$LOGFILE"
 
+# ── Render96ex broken-upstream warning ───────────────────────────────────────
+# Show this prominently before Step 1 so the user can ctrl-C if they didn't
+# realize what they were getting into. Don't bail outright — anyone passing
+# --upstream-url to point at a different render96 fork still benefits from
+# the Step 6.5 patches.
+if [[ "$UPSTREAM" == "render96ex" ]] && [[ -z "$UPSTREAM_URL_OVERRIDE" ]]; then
+    echo "" | tee -a "$LOGFILE"
+    echo "⚠️  ════════════════════════════════════════════════════════════════" | tee -a "$LOGFILE"
+    echo "    Render96/Render96ex is known broken on macOS Tahoe." | tee -a "$LOGFILE"
+    echo "    The fork's macOS support is unmaintained; 5 iterative patches" | tee -a "$LOGFILE"
+    echo "    (Steps 6.5, CPP=, CPATH=) clear earlier failures but a 6th" | tee -a "$LOGFILE"
+    echo "    issue (cpp-15 linemarker output mangling generated headers)" | tee -a "$LOGFILE"
+    echo "    blocks the build. See README.md → Known issues." | tee -a "$LOGFILE"
+    echo "" | tee -a "$LOGFILE"
+    echo "    Workarounds:" | tee -a "$LOGFILE"
+    echo "      • For HD textures: use the default sm64ex preset with a" | tee -a "$LOGFILE"
+    echo "        Render96 texture pack drop-in. EXTERNAL_DATA=1 is on." | tee -a "$LOGFILE"
+    echo "      • For a different render96 fork: re-run this script with" | tee -a "$LOGFILE"
+    echo "        --upstream-url <git-url-of-fork>" | tee -a "$LOGFILE"
+    echo "" | tee -a "$LOGFILE"
+    echo "    Continuing in 5 seconds. Ctrl-C to abort." | tee -a "$LOGFILE"
+    echo "    ════════════════════════════════════════════════════════════════" | tee -a "$LOGFILE"
+    sleep 5
+fi
+
+if [[ "$UPSTREAM" == "render96ex" ]]; then
+    if [[ -n "${DETECTED_CPP:-}" ]]; then
+        echo "    Detected CPP: $DETECTED_CPP (overriding Makefile's hardcoded cpp-9)" | tee -a "$LOGFILE"
+    else
+        echo "    ⚠️  No cpp-N found under /usr/local/bin/. Build will likely fail with" | tee -a "$LOGFILE"
+        echo "       'cpp-9: command not found' from render96ex's Makefile.split." | tee -a "$LOGFILE"
+        echo "       Fix: brew install gcc  (or any cpp-N from Homebrew's gcc package)" | tee -a "$LOGFILE"
+    fi
+fi
+
 # ── Step 1: Homebrew deps (skippable) ─────────────────────────────────────────
-# Common base is installed by sm64-macaroni-initial-setup.sh; this step is a
-# safety net plus the slot for preset-specific extras (e.g. curl/coreutils for
-# coopdx). Re-running brew install on already-installed packages is cheap.
 if (( ! SKIP_DEPS )); then
     echo "" | tee -a "$LOGFILE"
     echo "📦 Step 1: Homebrew dependencies" | tee -a "$LOGFILE"
@@ -178,9 +230,6 @@ fi
 echo "    ✅ $(xcode-select -p)" | tee -a "$LOGFILE"
 
 # ── Step 3: gmake availability ────────────────────────────────────────────────
-# macOS ships GNU make 3.81 as /usr/bin/make — too old for sm64ex (requires
-# 4.x). Homebrew's make package provides /usr/local/bin/gmake (GNU make 4.x).
-# The Makefile uses 4.x-only constructs (.SECONDEXPANSION recipes, etc.).
 echo "" | tee -a "$LOGFILE"
 echo "🔧 Step 3: gmake (GNU make 4.x)" | tee -a "$LOGFILE"
 if ! command -v gmake &>/dev/null; then
@@ -191,7 +240,6 @@ fi
 echo "    ✅ $(gmake --version | head -1)" | tee -a "$LOGFILE"
 
 # ── Step 4: Clone or update ───────────────────────────────────────────────────
-# Check for Makefile — not just the directory — to detect stale/empty clones.
 echo "" | tee -a "$LOGFILE"
 echo "📥 Step 4: Clone / update $UPSTREAM_LABEL" | tee -a "$LOGFILE"
 if [[ ! -f "$REPO_DIR/Makefile" ]]; then
@@ -207,8 +255,6 @@ fi
 echo "    ✅ $(git -C "$REPO_DIR" rev-parse --short HEAD) on $(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)" | tee -a "$LOGFILE"
 
 # ── Step 5: ROM ───────────────────────────────────────────────────────────────
-# All sm64ex-family Makefiles expect baserom.us.z64 at the upstream repo root.
-# The wrapper repo keeps the ROM in roms/ (gitignored, shared across builds).
 echo "" | tee -a "$LOGFILE"
 echo "🎮 Step 5: ROM" | tee -a "$LOGFILE"
 if [[ -f "$ROM_DEST" ]]; then
@@ -225,11 +271,6 @@ else
 fi
 
 # ── Step 6: Extract assets ────────────────────────────────────────────────────
-# extract_assets.py reads baserom.us.z64 and writes raw asset files into the
-# repo's actors/, levels/, sound/, textures/ trees. Re-running is idempotent
-# but slow (~30-60s); we cache by checking for one of the canonical extracted
-# files. Some forks may rename or relocate this script — fall back to make
-# extract_assets if the .py is missing.
 echo "" | tee -a "$LOGFILE"
 echo "📦 Step 6: Extract assets from ROM" | tee -a "$LOGFILE"
 EXTRACT_MARKER="$REPO_DIR/sound/sound_data.ctl.inc.c"
@@ -246,19 +287,83 @@ else
     echo "    ⚠️  extract_assets.py not found — relying on Makefile to extract." | tee -a "$LOGFILE"
 fi
 
+# ── Step 6.5: Render96ex source patches (Tahoe-clang compatibility) ──────────
+SM64M_SENTINEL_1="/* sm64-macaroni: Tahoe-clang stdio.h fix — v0.15 */"
+
+apply_render96ex_patches() {
+    local patched=0
+
+    # Patch 1: aiff_extract_codebook.c needs <stdio.h> BEFORE _XOPEN_SOURCE 500
+    local aiff="$REPO_DIR/tools/aiff_extract_codebook.c"
+    if [[ -f "$aiff" ]] && ! grep -qF "$SM64M_SENTINEL_1" "$aiff"; then
+        echo "    Original head of aiff_extract_codebook.c:" | tee -a "$LOGFILE"
+        head -3 "$aiff" | sed 's/^/      ▸ /' | tee -a "$LOGFILE"
+        {
+            echo "$SM64M_SENTINEL_1"
+            echo "#include <stdio.h>"
+            cat "$aiff"
+        } > "$aiff.tmp" && mv "$aiff.tmp" "$aiff"
+        echo "    ✅ Patched: tools/aiff_extract_codebook.c (+#include <stdio.h>)" | tee -a "$LOGFILE"
+        patched=$((patched + 1))
+    elif [[ -f "$aiff" ]]; then
+        echo "    · Skipped (sentinel present): tools/aiff_extract_codebook.c" | tee -a "$LOGFILE"
+    fi
+
+    # Patch 2: exoquant.c uses Linux <malloc.h>
+    local exoquant="$REPO_DIR/tools/n64graphics_ci_dir/exoquant/exoquant.c"
+    if [[ -f "$exoquant" ]] && grep -q '#include <malloc.h>' "$exoquant"; then
+        sed -i '' 's|#include <malloc.h>|#include <stdlib.h>|' "$exoquant"
+        echo "    ✅ Patched: tools/n64graphics_ci_dir/exoquant/exoquant.c (<malloc.h> → <stdlib.h>)" | tee -a "$LOGFILE"
+        patched=$((patched + 1))
+    elif [[ -f "$exoquant" ]]; then
+        echo "    · Skipped (already patched): tools/n64graphics_ci_dir/exoquant/exoquant.c" | tee -a "$LOGFILE"
+    fi
+
+    # Patch 3: tools/Makefile — tabledesign depends on libaudiofile.a
+    local toolsmk="$REPO_DIR/tools/Makefile"
+    local sentinel3="# sm64-macaroni: tabledesign-audiofile order fix"
+    if [[ -f "$toolsmk" ]] && ! grep -qF "$sentinel3" "$toolsmk"; then
+        cat >> "$toolsmk" << 'MAKEPATCH'
+
+# sm64-macaroni: tabledesign-audiofile order fix
+# Force tabledesign to wait for libaudiofile.a before linking. Without this,
+# `gmake -jN` can race the linker against an unbuilt static library on macOS.
+tabledesign: audiofile/libaudiofile.a
+MAKEPATCH
+        echo "    ✅ Patched: tools/Makefile (tabledesign depends on libaudiofile.a)" | tee -a "$LOGFILE"
+        patched=$((patched + 1))
+    elif [[ -f "$toolsmk" ]]; then
+        echo "    · Skipped (already patched): tools/Makefile" | tee -a "$LOGFILE"
+    fi
+
+    if (( patched > 0 )); then
+        echo "    📝 Applied $patched render96ex patch(es) for Tahoe-clang compatibility" | tee -a "$LOGFILE"
+        echo "    🧹 Cleaning tools/ to force rebuild from patched sources..." | tee -a "$LOGFILE"
+        (cd "$REPO_DIR/tools" && gmake clean 2>&1 | tee -a "$LOGFILE") || true
+    fi
+}
+
+if [[ "$UPSTREAM" == "render96ex" ]]; then
+    echo "" | tee -a "$LOGFILE"
+    echo "🩹 Step 6.5: Render96ex Tahoe-clang patches" | tee -a "$LOGFILE"
+    apply_render96ex_patches
+fi
+
 # ── Step 7: Build ─────────────────────────────────────────────────────────────
-# OSX_BUILD=1 enables the macOS-specific paths in the upstream Makefile (links
-# against Homebrew SDL2/GLEW/GLFW, uses gcc-from-Homebrew rather than Apple
-# clang for the audio code that needs gnu99 dialect, etc.).
+if [[ "$UPSTREAM" == "render96ex" ]]; then
+    export CPATH="/usr/local/include:${CPATH:-}"
+    echo "" | tee -a "$LOGFILE"
+    echo "🔧 Render96ex CPATH override" | tee -a "$LOGFILE"
+    echo "    CPATH=$CPATH" | tee -a "$LOGFILE"
+    echo "    (resolves <SDL2/SDL.h> against Homebrew's /usr/local/include/SDL2/)" | tee -a "$LOGFILE"
+fi
+
 echo "" | tee -a "$LOGFILE"
 echo "🔨 Step 7: Build  ($(sysctl -n hw.logicalcpu) cores)" | tee -a "$LOGFILE"
 echo "    gmake OSX_BUILD=1 ${EXTRA_MAKE_FLAGS[*]} -j$(sysctl -n hw.logicalcpu)" | tee -a "$LOGFILE"
 (cd "$REPO_DIR" && gmake OSX_BUILD=1 "${EXTRA_MAKE_FLAGS[@]}" -j"$(sysctl -n hw.logicalcpu)") 2>&1 | tee -a "$LOGFILE"
 
 # ── Step 8: Binary validation ─────────────────────────────────────────────────
-# sm64ex / Render96ex name the binary build/us_pc/sm64.us.f3dex2e (region +
-# microcode encoded in the filename). sm64coopdx may use sm64coopdx instead.
-# Fall back to a discovery loop covering the common candidates.
 echo "" | tee -a "$LOGFILE"
 echo "🔍 Step 8: Validate binary" | tee -a "$LOGFILE"
 BINARY=""
@@ -268,6 +373,9 @@ CANDIDATES+=(
     "$REPO_DIR/build/us_pc/sm64.us.f3dex2e"
     "$REPO_DIR/build/us_pc/sm64coopdx"
     "$REPO_DIR/build/us_pc/sm64ex"
+    "$REPO_DIR/build/us_pc/sm64coopdx.app/Contents/MacOS/sm64coopdx"
+    "$REPO_DIR/build/us_pc/sm64ex.app/Contents/MacOS/sm64ex"
+    "$REPO_DIR/build/us_pc/sm64.us.f3dex2e.app/Contents/MacOS/sm64.us.f3dex2e"
 )
 for candidate in "${CANDIDATES[@]}"; do
     if [[ -f "$candidate" ]]; then
@@ -288,6 +396,11 @@ echo "    ✅ Binary: $(file "$BINARY" | grep -o 'Mach-O.*')" | tee -a "$LOGFILE
 echo "    ✅ Path:   $BINARY" | tee -a "$LOGFILE"
 echo "    ✅ Size:   $(du -h "$BINARY" | cut -f1)" | tee -a "$LOGFILE"
 echo "    ✅ Built:  $(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$BINARY")" | tee -a "$LOGFILE"
+
+if [[ "$BINARY" == *".app/Contents/MacOS/"* ]]; then
+    APP_DIR="${BINARY%/Contents/MacOS/*}"
+    echo "    ℹ️  Binary lives inside upstream .app: $APP_DIR" | tee -a "$LOGFILE"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo "" | tee -a "$LOGFILE"
